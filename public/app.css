@@ -131,10 +131,24 @@ body {
 }
 
 .workspace {
-  display: grid;
-  grid-template-columns: 240px minmax(280px, 1fr) minmax(280px, 360px);
+  display: flex;
   flex: 1;
   min-height: 0;
+  min-width: 0;
+}
+
+.sidebar {
+  flex-shrink: 0;
+  width: var(--sidebar-width, 240px);
+  min-width: 180px;
+  max-width: 480px;
+}
+
+.terminal-pane {
+  flex-shrink: 0;
+  width: var(--terminal-width, 320px);
+  min-width: 240px;
+  max-width: 560px;
 }
 
 .sidebar,
@@ -143,12 +157,43 @@ body {
   flex-direction: column;
   min-height: 0;
   background: var(--bg-secondary);
-  border-right: 1px solid var(--border-color);
 }
 
-.terminal-pane {
-  border-right: none;
-  border-left: 1px solid var(--border-color);
+.panel-resizer {
+  flex-shrink: 0;
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 5;
+  transition: background 0.15s ease;
+}
+
+.panel-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -2px;
+  right: -2px;
+}
+
+.panel-resizer:hover,
+.panel-resizer.is-active {
+  background: var(--accent-color);
+}
+
+body.is-resizing {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+body.is-resizing * {
+  cursor: col-resize !important;
+}
+
+.workspace.is-editor-fullscreen .panel-resizer {
+  pointer-events: none;
 }
 
 .panel-header {
@@ -366,7 +411,8 @@ body {
 .editor-pane {
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  flex: 1;
+  min-width: 280px;
   min-height: 0;
   background: var(--bg-primary);
 }
@@ -734,12 +780,6 @@ body {
 
 .terminal-body .xterm {
   height: 100%;
-}
-
-@media (max-width: 960px) {
-  .workspace {
-    grid-template-columns: 220px minmax(0, 1fr) 280px;
-  }
 }
 
 .create-dialog {

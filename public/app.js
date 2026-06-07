@@ -8,6 +8,10 @@ const editorModeEditBtn = document.getElementById('editor-mode-edit')
 const editorSaveBtn = document.getElementById('editor-save')
 const editorFullscreenBtn = document.getElementById('editor-fullscreen')
 const editorPaneEl = document.querySelector('.editor-pane')
+const workspaceEl = document.querySelector('.workspace')
+const sidebarEl = document.querySelector('.sidebar')
+const resizerSidebarEl = document.getElementById('resizer-sidebar')
+const resizerTerminalEl = document.getElementById('resizer-terminal')
 const shellLabelEl = document.getElementById('shell-label')
 const terminalStatusEl = document.getElementById('terminal-status')
 const terminalContainerEl = document.getElementById('terminal')
@@ -285,15 +289,160 @@ function toggleFullscreen() {
   isFullscreen = !isFullscreen
   if (isFullscreen) {
     editorPaneEl.classList.add('fullscreen')
+    workspaceEl.classList.add('is-editor-fullscreen')
     editorFullscreenBtn.querySelector('.icon-enter').style.display = 'none'
     editorFullscreenBtn.querySelector('.icon-exit').style.display = 'block'
     editorFullscreenBtn.title = '退出全屏 (Alt+F)'
   } else {
     editorPaneEl.classList.remove('fullscreen')
+    workspaceEl.classList.remove('is-editor-fullscreen')
     editorFullscreenBtn.querySelector('.icon-enter').style.display = 'block'
     editorFullscreenBtn.querySelector('.icon-exit').style.display = 'none'
     editorFullscreenBtn.title = '全屏 (Alt+F)'
+    requestAnimationFrame(() => {
+      resizeTerminal()
+    })
   }
+}
+
+const PANEL_WIDTH_STORAGE_KEY = 'dwr-panel-widths'
+const PANEL_LIMITS = {
+  sidebar: { min: 180, max: 480, defaultWidth: 240 },
+  terminal: { min: 240, max: 560, defaultWidth: 320 },
+  editor: { min: 280 },
+}
+
+function clampPanelWidth(value, min, max) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function loadPanelWidths() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PANEL_WIDTH_STORAGE_KEY) ?? '{}')
+    return {
+      sidebar: clampPanelWidth(
+        Number(saved.sidebar) || PANEL_LIMITS.sidebar.defaultWidth,
+        PANEL_LIMITS.sidebar.min,
+        PANEL_LIMITS.sidebar.max,
+      ),
+      terminal: clampPanelWidth(
+        Number(saved.terminal) || PANEL_LIMITS.terminal.defaultWidth,
+        PANEL_LIMITS.terminal.min,
+        PANEL_LIMITS.terminal.max,
+      ),
+    }
+  } catch {
+    return {
+      sidebar: PANEL_LIMITS.sidebar.defaultWidth,
+      terminal: PANEL_LIMITS.terminal.defaultWidth,
+    }
+  }
+}
+
+function savePanelWidths(widths) {
+  localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, JSON.stringify(widths))
+}
+
+function applyPanelWidths(widths) {
+  document.documentElement.style.setProperty('--sidebar-width', `${widths.sidebar}px`)
+  document.documentElement.style.setProperty('--terminal-width', `${widths.terminal}px`)
+  sidebarEl.style.width = `${widths.sidebar}px`
+  terminalPaneEl.style.width = `${widths.terminal}px`
+}
+
+function getWorkspaceInnerWidth() {
+  const resizerWidth = 8
+  return workspaceEl.clientWidth - resizerWidth
+}
+
+function constrainPanelWidths(widths) {
+  const total = getWorkspaceInnerWidth()
+  let sidebar = clampPanelWidth(widths.sidebar, PANEL_LIMITS.sidebar.min, PANEL_LIMITS.sidebar.max)
+  let terminal = clampPanelWidth(widths.terminal, PANEL_LIMITS.terminal.min, PANEL_LIMITS.terminal.max)
+
+  const editorWidth = total - sidebar - terminal
+  if (editorWidth < PANEL_LIMITS.editor.min) {
+    const deficit = PANEL_LIMITS.editor.min - editorWidth
+    const terminalShrink = Math.min(deficit, terminal - PANEL_LIMITS.terminal.min)
+    terminal -= terminalShrink
+    const remaining = deficit - terminalShrink
+    if (remaining > 0) {
+      sidebar = Math.max(PANEL_LIMITS.sidebar.min, sidebar - remaining)
+    }
+  }
+
+  return { sidebar, terminal }
+}
+
+function bindPanelResizer(resizerEl, onDrag, onStop) {
+  resizerEl.addEventListener('mousedown', (event) => {
+    event.preventDefault()
+    document.body.classList.add('is-resizing')
+    resizerEl.classList.add('is-active')
+
+    const stop = () => {
+      document.body.classList.remove('is-resizing')
+      resizerEl.classList.remove('is-active')
+      document.removeEventListener('mousemove', move)
+      document.removeEventListener('mouseup', stop)
+      onStop()
+      requestAnimationFrame(() => {
+        resizeTerminal()
+      })
+    }
+
+    const move = (moveEvent) => {
+      onDrag(moveEvent.movementX)
+    }
+
+    document.addEventListener('mousemove', move)
+    document.addEventListener('mouseup', stop)
+  })
+}
+
+function initPanelResizers() {
+  const widths = loadPanelWidths()
+  applyPanelWidths(constrainPanelWidths(widths))
+
+  const persistWidths = () => {
+    savePanelWidths(widths)
+  }
+
+  bindPanelResizer(resizerSidebarEl, (deltaX) => {
+    const next = constrainPanelWidths({
+      sidebar: widths.sidebar + deltaX,
+      terminal: widths.terminal,
+    })
+    widths.sidebar = next.sidebar
+    widths.terminal = next.terminal
+    applyPanelWidths(next)
+    requestAnimationFrame(() => {
+      resizeTerminal()
+    })
+  }, persistWidths)
+
+  bindPanelResizer(resizerTerminalEl, (deltaX) => {
+    const next = constrainPanelWidths({
+      sidebar: widths.sidebar,
+      terminal: widths.terminal - deltaX,
+    })
+    widths.sidebar = next.sidebar
+    widths.terminal = next.terminal
+    applyPanelWidths(next)
+    requestAnimationFrame(() => {
+      resizeTerminal()
+    })
+  }, persistWidths)
+
+  window.addEventListener('resize', () => {
+    const next = constrainPanelWidths(widths)
+    widths.sidebar = next.sidebar
+    widths.terminal = next.terminal
+    applyPanelWidths(next)
+    requestAnimationFrame(() => {
+      resizeTerminal()
+    })
+  })
 }
 
 function updateEditorToolbar() {
@@ -717,6 +866,7 @@ function connectTerminal() {
 
 async function init() {
   initTerminal()
+  initPanelResizers()
 
   rootCreateFolderBtn.addEventListener('click', () => {
     openCreateDialog('', 'directory')
