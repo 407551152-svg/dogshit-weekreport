@@ -70,10 +70,8 @@ function printHelp(): void {
   -h         显示帮助
 
 环境变量（见 .env.example）:
-  DWR_HOST         监听地址，默认 127.0.0.1
-  DWR_PORT         服务端口
-  DWR_ALLOWED_IPS  允许访问的客户端 IP，逗号分隔
-  ANTHROPIC_API_KEY  对话模式 Claude CLI 使用的密钥
+  DWR_HOST / DWR_PORT / DWR_ALLOWED_IPS  服务访问
+  ANTHROPIC_BASE_URL / ANTHROPIC_API_KEY / ANTHROPIC_MODEL  Claude 连接（其余见 .claude/settings.json）
 `)
 }
 

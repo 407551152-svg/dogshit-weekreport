@@ -92,16 +92,29 @@ export function isClientIpAllowed(clientIp: string, allowedIps: string[]): boole
   return allowedIps.includes(ip)
 }
 
-/** 注入 Claude CLI 可能用到的密钥（仅对话 PTY） */
+/** .env 注入 Claude 对话 PTY 的三项；其余配置保留在 .claude/settings.json */
+const CLAUDE_ENV_FROM_DOTENV = [
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_MODEL',
+] as const
+
+/** 注入 Claude CLI 环境变量（仅对话 PTY） */
 export function buildClaudeShellEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env = { ...base }
-  const keys = ['ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN'] as const
 
-  for (const key of keys) {
+  for (const key of CLAUDE_ENV_FROM_DOTENV) {
     const value = process.env[key]?.trim()
-    if (value) {
-      env[key] = value
+    if (!value) {
+      continue
     }
+    env[key] = value
+  }
+
+  // settings.json 示例使用 ANTHROPIC_AUTH_TOKEN，与 .env 的 API_KEY 对齐
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
+  if (apiKey && !env.ANTHROPIC_AUTH_TOKEN) {
+    env.ANTHROPIC_AUTH_TOKEN = apiKey
   }
 
   return env
