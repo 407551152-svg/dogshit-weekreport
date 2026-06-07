@@ -131,16 +131,45 @@ function createTreeRow(entry, depth) {
   row.dataset.path = entry.path
   row.dataset.kind = entry.type
 
-  const icon = document.createElement('span')
-  icon.className = 'tree-icon'
-  icon.textContent = entry.type === 'directory' ? '▸' : '•'
+  if (entry.type === 'directory') {
+    const chevron = document.createElement('span')
+    chevron.className = 'tree-chevron'
+    chevron.textContent = '▸'
+    row.appendChild(chevron)
+
+    const icon = document.createElement('span')
+    icon.className = 'tree-icon'
+    icon.innerHTML = renderFileIcon(resolveDirectoryIconName(entry.name, false))
+    row.appendChild(icon)
+  } else {
+    const spacer = document.createElement('span')
+    spacer.className = 'tree-chevron placeholder'
+    row.appendChild(spacer)
+
+    const icon = document.createElement('span')
+    icon.className = 'tree-icon'
+    icon.innerHTML = renderFileIcon(resolveFileIconName(entry.name))
+    row.appendChild(icon)
+  }
 
   const label = document.createElement('span')
   label.className = 'tree-label'
   label.textContent = entry.name
 
-  row.append(icon, label)
+  row.append(label)
   return row
+}
+
+function updateDirectoryRowIcon(row, expanded) {
+  const iconEl = row.querySelector('.tree-icon')
+  const chevronEl = row.querySelector('.tree-chevron')
+  const dirName = row.dataset.path.split('/').pop() ?? ''
+  if (iconEl) {
+    iconEl.innerHTML = renderFileIcon(resolveDirectoryIconName(dirName, expanded))
+  }
+  if (chevronEl) {
+    chevronEl.textContent = expanded ? '▾' : '▸'
+  }
 }
 
 async function loadDirectory(path, container, depth) {
@@ -164,7 +193,7 @@ async function loadDirectory(path, container, depth) {
       row.addEventListener('click', async (event) => {
         event.stopPropagation()
         const expanded = node.classList.toggle('expanded')
-        row.querySelector('.tree-icon').textContent = expanded ? '▾' : '▸'
+        updateDirectoryRowIcon(row, expanded)
 
         if (expanded && !node.dataset.loaded) {
           node.dataset.loaded = '1'

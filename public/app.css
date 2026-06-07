@@ -87,7 +87,7 @@ body {
 .tree-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   padding: 3px 8px 3px calc(8px + var(--depth, 0) * 14px);
   cursor: pointer;
   white-space: nowrap;
@@ -101,11 +101,29 @@ body {
   background: #094771;
 }
 
-.tree-icon {
-  width: 14px;
+.tree-chevron {
+  width: 12px;
   color: #858585;
   text-align: center;
   flex-shrink: 0;
+  font-size: 10px;
+}
+
+.tree-chevron.placeholder {
+  visibility: hidden;
+}
+
+.tree-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.tree-icon-svg {
+  display: block;
 }
 
 .tree-label {
