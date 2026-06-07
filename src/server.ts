@@ -215,11 +215,32 @@ export async function startWorkspaceServer(options: WorkspaceServerOptions): Pro
   })
 
   const server: Server = createServer(app)
-  const wss = new WebSocketServer({ server, path: '/ws' })
-  const treeWss = new WebSocketServer({ server, path: '/ws/tree' })
+  const wss = new WebSocketServer({ noServer: true })
+  const treeWss = new WebSocketServer({ noServer: true })
   const cleanups = new Set<() => void>()
   const treeClients = new Set<WebSocket>()
   let fileWatchCleanup: (() => void) | null = null
+
+  server.on('upgrade', (request, socket, head) => {
+    const host = request.headers.host ?? '127.0.0.1'
+    const pathname = new URL(request.url ?? '/', `http://${host}`).pathname
+
+    if (pathname === '/ws') {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request)
+      })
+      return
+    }
+
+    if (pathname === '/ws/tree') {
+      treeWss.handleUpgrade(request, socket, head, (ws) => {
+        treeWss.emit('connection', ws, request)
+      })
+      return
+    }
+
+    socket.destroy()
+  })
 
   const broadcastTreeChange = () => {
     const payload = JSON.stringify({ type: 'changed' })

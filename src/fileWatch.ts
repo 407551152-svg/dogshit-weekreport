@@ -16,7 +16,7 @@ export function watchProjectDirectory(root: string, onChange: () => void): () =>
     debounceTimer = setTimeout(() => {
       debounceTimer = null
       onChange()
-    }, 250)
+    }, 600)
   }
 
   let watcher: FSWatcher

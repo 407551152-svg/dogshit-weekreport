@@ -67,13 +67,18 @@ function escapeHtml(text) {
 const MARKDOWN_EXTENSIONS = ['.md', '.markdown', '.mdx']
 
 const THEMES = ['dark', 'light', 'one-dark']
+const THEME_STORAGE_KEY = 'dwr-theme'
+const LAST_FILE_STORAGE_KEY = 'dwr-last-file'
 let currentThemeIndex = 0
+
+/** @type {Map<string, string>} */
+const treeDirectoryFingerprints = new Map()
 
 function getCssVariable(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
-function applyTheme(themeName) {
+function applyTheme(themeName, options = { persist: true }) {
   if (themeName === 'dark') {
     document.documentElement.removeAttribute('data-theme')
   } else {
@@ -92,6 +97,17 @@ function applyTheme(themeName) {
   document.querySelectorAll('.theme-circle').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.theme === themeName)
   })
+
+  if (options.persist) {
+    localStorage.setItem(THEME_STORAGE_KEY, themeName)
+  }
+}
+
+function loadStoredTheme() {
+  const saved = localStorage.getItem(THEME_STORAGE_KEY)
+  const themeName = saved && THEMES.includes(saved) ? saved : THEMES[0]
+  currentThemeIndex = THEMES.indexOf(themeName)
+  applyTheme(themeName, { persist: false })
 }
 
 function toggleTheme() {
@@ -600,6 +616,7 @@ async function openFile(path) {
       return
     }
     loadEditableFile(file.path, file.content)
+    localStorage.setItem(LAST_FILE_STORAGE_KEY, path)
   } catch (error) {
     resetEditorState()
     setEditorError(error instanceof Error ? error.message : '读取文件失败')
@@ -669,6 +686,7 @@ async function reloadDirectory(path, container, depth) {
 async function refreshTreeAt(parentPath) {
   if (!parentPath) {
     await reloadDirectory('', fileTreeEl, 0)
+    treeDirectoryFingerprints.set('', await fetchDirectoryFingerprint(''))
     return
   }
 
@@ -689,6 +707,60 @@ async function refreshTreeAt(parentPath) {
   updateDirectoryRowIcon(row, true)
   node.dataset.loaded = '1'
   await reloadDirectory(parentPath, childContainer, depth + 1)
+  treeDirectoryFingerprints.set(parentPath, await fetchDirectoryFingerprint(parentPath))
+}
+
+function fingerprintEntries(entries) {
+  return entries.map((entry) => `${entry.type}:${entry.path}`).join('\n')
+}
+
+async function fetchDirectoryFingerprint(path) {
+  const data = await fetchJson(`/api/files?path=${encodeURIComponent(path)}`)
+  return fingerprintEntries(data.entries)
+}
+
+async function seedTreeFingerprints() {
+  treeDirectoryFingerprints.clear()
+  const paths = ['', ...collectExpandedDirectoryPaths()]
+  for (const path of paths) {
+    treeDirectoryFingerprints.set(path, await fetchDirectoryFingerprint(path))
+  }
+}
+
+function getDirectoryContainerInfo(path) {
+  if (!path) {
+    return { container: fileTreeEl, depth: 0 }
+  }
+
+  const row = fileTreeEl.querySelector(`.tree-row.directory[data-path="${CSS.escape(path)}"]`)
+  const node = row?.closest('.tree-node')
+  const container = node?.querySelector('.tree-children')
+  if (!row || !container) {
+    return null
+  }
+
+  return {
+    container,
+    depth: Number(row.style.getPropertyValue('--depth') || '0') + 1,
+  }
+}
+
+async function reloadDirectoryContainer(path) {
+  const expandedPaths = collectExpandedDirectoryPaths()
+  const info = getDirectoryContainerInfo(path)
+  if (!info) {
+    return
+  }
+
+  await reloadDirectory(path, info.container, info.depth)
+
+  for (const expandedPath of expandedPaths) {
+    if (!path || expandedPath === path || expandedPath.startsWith(`${path}/`)) {
+      await expandAndLoadDirectory(expandedPath)
+    }
+  }
+
+  treeDirectoryFingerprints.set(path, await fetchDirectoryFingerprint(path))
 }
 
 async function loadDirectory(path, container, depth) {
@@ -739,6 +811,7 @@ async function initFileTree() {
   try {
     fileTreeEl.innerHTML = ''
     await loadDirectory('', fileTreeEl, 0)
+    await seedTreeFingerprints()
   } catch (error) {
     fileTreeEl.innerHTML = `<div class="editor-empty" style="height:auto;padding:16px;color:#f48771">${escapeHtml(error instanceof Error ? error.message : '加载失败')}</div>`
   }
@@ -749,9 +822,6 @@ let fileTreeSocket = null
 
 /** @type {ReturnType<typeof setTimeout> | null} */
 let fileTreeReconnectTimer = null
-
-/** @type {ReturnType<typeof setInterval> | null} */
-let fileTreePollTimer = null
 
 /** @type {ReturnType<typeof setTimeout> | null} */
 let fileTreeRefreshTimer = null
@@ -784,6 +854,7 @@ async function expandAndLoadDirectory(path) {
   node.dataset.loaded = '1'
   updateDirectoryRowIcon(row, true)
   await reloadDirectory(path, childContainer, depth + 1)
+  treeDirectoryFingerprints.set(path, await fetchDirectoryFingerprint(path))
 }
 
 async function refreshFileTree() {
@@ -793,11 +864,27 @@ async function refreshFileTree() {
 
   fileTreeRefreshing = true
   try {
-    const expandedPaths = collectExpandedDirectoryPaths()
-    await reloadDirectory('', fileTreeEl, 0)
-    for (const path of expandedPaths) {
-      await expandAndLoadDirectory(path)
+    const watchPaths = ['', ...collectExpandedDirectoryPaths()]
+    /** @type {string[]} */
+    const changedPaths = []
+
+    for (const path of watchPaths) {
+      const nextFingerprint = await fetchDirectoryFingerprint(path)
+      if (treeDirectoryFingerprints.get(path) !== nextFingerprint) {
+        changedPaths.push(path)
+      }
     }
+
+    if (changedPaths.length === 0) {
+      return
+    }
+
+    changedPaths.sort((a, b) => a.split('/').length - b.split('/').length)
+
+    for (const path of changedPaths) {
+      await reloadDirectoryContainer(path)
+    }
+
     if (activeFilePath) {
       markActiveFile(activeFilePath)
     }
@@ -815,27 +902,7 @@ function scheduleFileTreeRefresh() {
   fileTreeRefreshTimer = setTimeout(() => {
     fileTreeRefreshTimer = null
     void refreshFileTree()
-  }, 300)
-}
-
-function startFileTreePolling() {
-  if (fileTreePollTimer) {
-    return
-  }
-  fileTreePollTimer = setInterval(() => {
-    if (document.hidden) {
-      return
-    }
-    scheduleFileTreeRefresh()
-  }, 3000)
-}
-
-function stopFileTreePolling() {
-  if (!fileTreePollTimer) {
-    return
-  }
-  clearInterval(fileTreePollTimer)
-  fileTreePollTimer = null
+  }, 800)
 }
 
 function connectFileTreeWatch() {
@@ -844,12 +911,13 @@ function connectFileTreeWatch() {
     fileTreeReconnectTimer = null
   }
 
+  if (fileTreeSocket) {
+    fileTreeSocket.close()
+    fileTreeSocket = null
+  }
+
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
   fileTreeSocket = new WebSocket(`${protocol}//${location.host}/ws/tree`)
-
-  fileTreeSocket.addEventListener('open', () => {
-    stopFileTreePolling()
-  })
 
   fileTreeSocket.addEventListener('message', (event) => {
     let message
@@ -865,13 +933,29 @@ function connectFileTreeWatch() {
   })
 
   fileTreeSocket.addEventListener('close', () => {
-    startFileTreePolling()
-    fileTreeReconnectTimer = setTimeout(connectFileTreeWatch, 1500)
+    fileTreeReconnectTimer = setTimeout(connectFileTreeWatch, 3000)
   })
+}
 
-  fileTreeSocket.addEventListener('error', () => {
-    startFileTreePolling()
-  })
+async function restoreLastOpenedFile() {
+  const path = localStorage.getItem(LAST_FILE_STORAGE_KEY)
+  if (!path) {
+    return
+  }
+
+  const segments = path.split('/')
+  segments.pop()
+  let current = ''
+  for (const segment of segments) {
+    current = current ? `${current}/${segment}` : segment
+    await expandAndLoadDirectory(current)
+  }
+
+  try {
+    await openFile(path)
+  } catch {
+    localStorage.removeItem(LAST_FILE_STORAGE_KEY)
+  }
 }
 
 function setTerminalStatus(state) {
@@ -995,6 +1079,7 @@ function connectTerminal() {
 }
 
 async function init() {
+  loadStoredTheme()
   initTerminal()
   initPanelResizers()
 
@@ -1122,13 +1207,9 @@ async function init() {
     term?.focus()
   })
 
-  void initFileTree()
-  connectFileTreeWatch()
-
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) {
-      scheduleFileTreeRefresh()
-    }
+  void initFileTree().then(async () => {
+    await restoreLastOpenedFile()
+    connectFileTreeWatch()
   })
 }
 
