@@ -5,17 +5,18 @@ import express from 'express'
 import type { IPty } from 'node-pty'
 import * as pty from 'node-pty'
 import { WebSocketServer, type WebSocket } from 'ws'
+import { FileAccessError, listDirectory, readProjectFile } from './files.js'
 import { buildShellEnv, getDefaultShell } from './shell.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-export interface TerminalServerOptions {
+export interface WorkspaceServerOptions {
   cwd: string
   port?: number
   host?: string
 }
 
-export interface TerminalServerHandle {
+export interface WorkspaceServerHandle {
   url: string
   port: number
   cwd: string
@@ -23,7 +24,7 @@ export interface TerminalServerHandle {
   close: () => Promise<void>
 }
 
-interface ClientMessage {
+interface TerminalClientMessage {
   type: 'input' | 'resize'
   data?: string
   cols?: number
@@ -31,14 +32,14 @@ interface ClientMessage {
 }
 
 function resolvePublicDir(): string {
-  const bundled = join(__dirname, '..', 'public')
-  if (bundled.endsWith('dist')) {
-    return join(__dirname, '..', 'public')
-  }
   return join(__dirname, '..', 'public')
 }
 
-function attachTerminal(ws: WebSocket, cwd: string, shell: ReturnType<typeof getDefaultShell>): () => void {
+function attachTerminal(
+  ws: WebSocket,
+  cwd: string,
+  shell: ReturnType<typeof getDefaultShell>,
+): () => void {
   let ptyProcess: IPty | null = null
 
   const dispose = () => {
@@ -75,9 +76,9 @@ function attachTerminal(ws: WebSocket, cwd: string, shell: ReturnType<typeof get
       return
     }
 
-    let message: ClientMessage
+    let message: TerminalClientMessage
     try {
-      message = JSON.parse(String(raw)) as ClientMessage
+      message = JSON.parse(String(raw)) as TerminalClientMessage
     } catch {
       return
     }
@@ -113,7 +114,15 @@ function attachTerminal(ws: WebSocket, cwd: string, shell: ReturnType<typeof get
   return dispose
 }
 
-export async function startTerminalServer(options: TerminalServerOptions): Promise<TerminalServerHandle> {
+function sendFileError(res: express.Response, error: unknown): void {
+  if (error instanceof FileAccessError) {
+    res.status(error.status).json({ error: error.message })
+    return
+  }
+  res.status(500).json({ error: '服务器内部错误' })
+}
+
+export async function startWorkspaceServer(options: WorkspaceServerOptions): Promise<WorkspaceServerHandle> {
   const cwd = options.cwd
   const host = options.host ?? '127.0.0.1'
   const shell = getDefaultShell()
@@ -126,6 +135,26 @@ export async function startTerminalServer(options: TerminalServerOptions): Promi
       shell: shell.label,
       platform: process.platform,
     })
+  })
+
+  app.get('/api/files', async (req, res) => {
+    const path = typeof req.query.path === 'string' ? req.query.path : ''
+    try {
+      const entries = await listDirectory(cwd, path)
+      res.json({ path, entries })
+    } catch (error) {
+      sendFileError(res, error)
+    }
+  })
+
+  app.get('/api/file', async (req, res) => {
+    const path = typeof req.query.path === 'string' ? req.query.path : ''
+    try {
+      const file = await readProjectFile(cwd, path)
+      res.json(file)
+    } catch (error) {
+      sendFileError(res, error)
+    }
   })
 
   app.use(express.static(publicDir))

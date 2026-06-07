@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { resolve } from 'node:path'
-import { startTerminalServer } from './server.js'
+import { startWorkspaceServer } from './server.js'
 
 function parseArgs(argv: string[]): { cwd: string; port?: number } {
   const args = [...argv]
@@ -37,13 +37,13 @@ function parseArgs(argv: string[]): { cwd: string; port?: number } {
 }
 
 function printHelp(): void {
-  console.log(`weekreport-term — 浏览器内项目终端
+  console.log(`weekreport-term — 浏览器内项目工作台
 
 用法:
   weekreport-term [--cwd <path>] [--port <number>]
 
 选项:
-  --cwd   终端工作目录，默认为当前目录
+  --cwd   项目根目录，默认为当前目录
   --port  监听端口，默认自动分配
   -h      显示帮助
 `)
@@ -51,12 +51,11 @@ function printHelp(): void {
 
 async function main(): Promise<void> {
   const { cwd, port } = parseArgs(process.argv.slice(2))
-  const handle = await startTerminalServer({ cwd, port })
+  const handle = await startWorkspaceServer({ cwd, port })
 
   console.log('')
-  console.log('  项目终端已启动')
+  console.log('  项目工作台已启动')
   console.log(`  工作目录: ${handle.cwd}`)
-  console.log(`  Shell:    ${handle.shell.label}`)
   console.log(`  打开:     ${handle.url}`)
   console.log('')
   console.log('  按 Ctrl+C 停止服务')
