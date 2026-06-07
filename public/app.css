@@ -371,6 +371,12 @@ body {
   background: var(--bg-primary);
 }
 
+.editor-pane.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+}
+
 .editor-header {
   display: flex;
   align-items: center;
@@ -392,6 +398,25 @@ body {
 
 .editor-toolbar.hidden {
   display: none;
+}
+
+.editor-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.editor-icon-btn:hover {
+  background: var(--item-hover);
+  color: var(--text-primary);
 }
 
 .editor-mode-switch {

@@ -6,6 +6,8 @@ const editorToolbarEl = document.getElementById('editor-toolbar')
 const editorModeViewBtn = document.getElementById('editor-mode-view')
 const editorModeEditBtn = document.getElementById('editor-mode-edit')
 const editorSaveBtn = document.getElementById('editor-save')
+const editorFullscreenBtn = document.getElementById('editor-fullscreen')
+const editorPaneEl = document.querySelector('.editor-pane')
 const shellLabelEl = document.getElementById('shell-label')
 const terminalStatusEl = document.getElementById('terminal-status')
 const terminalContainerEl = document.getElementById('terminal')
@@ -33,6 +35,7 @@ let editorMode = 'view'
 let savedFileContent = ''
 let draftFileContent = ''
 let activeFileIsBinary = false
+let isFullscreen = false
 
 /** @type {{ path: string; type: 'file' | 'directory'; name: string } | null} */
 let pendingDelete = null
@@ -278,6 +281,21 @@ function syncDraftFromEditor() {
   }
 }
 
+function toggleFullscreen() {
+  isFullscreen = !isFullscreen
+  if (isFullscreen) {
+    editorPaneEl.classList.add('fullscreen')
+    editorFullscreenBtn.querySelector('.icon-enter').style.display = 'none'
+    editorFullscreenBtn.querySelector('.icon-exit').style.display = 'block'
+    editorFullscreenBtn.title = '退出全屏 (Alt+F)'
+  } else {
+    editorPaneEl.classList.remove('fullscreen')
+    editorFullscreenBtn.querySelector('.icon-enter').style.display = 'block'
+    editorFullscreenBtn.querySelector('.icon-exit').style.display = 'none'
+    editorFullscreenBtn.title = '全屏 (Alt+F)'
+  }
+}
+
 function updateEditorToolbar() {
   if (!activeFilePath || activeFileIsBinary) {
     editorToolbarEl.classList.add('hidden')
@@ -370,6 +388,9 @@ function resetEditorState() {
   draftFileContent = ''
   activeFileIsBinary = false
   editorMode = 'view'
+  if (isFullscreen) {
+    toggleFullscreen()
+  }
 }
 
 function setEditorEmpty(message) {
@@ -704,6 +725,10 @@ async function init() {
     openCreateDialog('', 'file')
   })
 
+  editorFullscreenBtn.addEventListener('click', () => {
+    toggleFullscreen()
+  })
+
   editorModeViewBtn.addEventListener('click', () => {
     setEditorMode('view')
   })
@@ -722,6 +747,14 @@ async function init() {
     if (event.altKey && event.key.toLowerCase() === 't') {
       event.preventDefault()
       toggleTheme()
+      return
+    }
+
+    if (event.altKey && event.key.toLowerCase() === 'f') {
+      event.preventDefault()
+      if (activeFilePath && !activeFileIsBinary) {
+        toggleFullscreen()
+      }
       return
     }
 
