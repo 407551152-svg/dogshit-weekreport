@@ -16,6 +16,8 @@ const resizerSidebarEl = document.getElementById('resizer-sidebar')
 const resizerTerminalEl = document.getElementById('resizer-terminal')
 const shellLabelEl = document.getElementById('shell-label')
 const terminalStatusEl = document.getElementById('terminal-status')
+const terminalModeShellBtn = document.getElementById('terminal-mode-shell')
+const terminalModeClaudeBtn = document.getElementById('terminal-mode-claude')
 const terminalContainerEl = document.getElementById('terminal')
 const terminalPaneEl = document.querySelector('.terminal-pane')
 const createDialogEl = document.getElementById('create-dialog')
@@ -57,6 +59,9 @@ let terminalSocket = null
 
 /** @type {ReturnType<typeof setTimeout> | null} */
 let reconnectTimer = null
+
+/** @type {'shell' | 'claude'} */
+let terminalProfile = 'shell'
 
 function escapeHtml(text) {
   return text
@@ -844,6 +849,59 @@ function setTerminalStatus(state) {
   terminalStatusEl.className = `status-dot ${state}`
 }
 
+function updateTerminalModeUI() {
+  terminalModeShellBtn?.classList.toggle('active', terminalProfile === 'shell')
+  terminalModeClaudeBtn?.classList.toggle('active', terminalProfile === 'claude')
+}
+
+function clearTerminalScreen() {
+  term?.clear()
+  term?.reset()
+}
+
+function applyTerminalSession(message) {
+  if (message.profile === 'shell' || message.profile === 'claude') {
+    terminalProfile = message.profile
+    updateTerminalModeUI()
+  }
+
+  clearTerminalScreen()
+  if (typeof message.data === 'string' && message.data) {
+    term?.write(message.data)
+  }
+
+  shellLabelEl.textContent = message.label ?? message.shell ?? '—'
+  setTerminalStatus(message.exitCode == null ? 'connected' : 'error')
+
+  requestAnimationFrame(() => {
+    resizeTerminal()
+    term?.focus()
+  })
+}
+
+function setTerminalMode(profile) {
+  if (terminalProfile === profile) {
+    term?.focus()
+    return
+  }
+
+  terminalProfile = profile
+  updateTerminalModeUI()
+
+  if (terminalSocket?.readyState === WebSocket.OPEN) {
+    fitAddon?.fit()
+    sendTerminal({
+      type: 'switch',
+      profile,
+      cols: term?.cols ?? 80,
+      rows: term?.rows ?? 24,
+    })
+    return
+  }
+
+  connectTerminal()
+}
+
 function sendTerminal(message) {
   if (terminalSocket && terminalSocket.readyState === WebSocket.OPEN) {
     terminalSocket.send(JSON.stringify(message))
@@ -913,10 +971,13 @@ function connectTerminal() {
   }
 
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  terminalSocket = new WebSocket(`${protocol}//${location.host}/ws`)
+  terminalSocket = new WebSocket(
+    `${protocol}//${location.host}/ws?profile=${encodeURIComponent(terminalProfile)}`,
+  )
 
   terminalSocket.addEventListener('open', () => {
     setTerminalStatus('connected')
+    updateTerminalModeUI()
     requestAnimationFrame(() => {
       resizeTerminal()
     })
@@ -931,22 +992,26 @@ function connectTerminal() {
     }
 
     if (message.type === 'ready') {
-      shellLabelEl.textContent = message.shell
-      requestAnimationFrame(() => {
-        resizeTerminal()
-        term?.focus()
-      })
+      applyTerminalSession(message)
+      return
+    }
+
+    if (message.type === 'switch') {
+      applyTerminalSession(message)
       return
     }
 
     if (message.type === 'output') {
-      term?.write(message.data)
+      if (!message.profile || message.profile === terminalProfile) {
+        term?.write(message.data)
+      }
       return
     }
 
     if (message.type === 'exit') {
-      term?.writeln(`\r\n\x1b[90m[进程已退出，退出码 ${message.exitCode}]\x1b[0m`)
-      setTerminalStatus('error')
+      if (!message.profile || message.profile === terminalProfile) {
+        setTerminalStatus('error')
+      }
     }
   })
 
@@ -962,6 +1027,7 @@ function connectTerminal() {
 
 async function init() {
   loadStoredTheme()
+  updateTerminalModeUI()
   initTerminal()
   initPanelResizers()
 
@@ -976,6 +1042,14 @@ async function init() {
     if (treeViewPath !== '') {
       navigateTreeTo('')
     }
+  })
+
+  terminalModeShellBtn?.addEventListener('click', () => {
+    setTerminalMode('shell')
+  })
+
+  terminalModeClaudeBtn?.addEventListener('click', () => {
+    setTerminalMode('claude')
   })
 
   editorFullscreenBtn.addEventListener('click', () => {

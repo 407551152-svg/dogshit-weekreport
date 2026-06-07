@@ -217,7 +217,22 @@
 
         <aside class="terminal-pane">
           <div class="panel-header terminal-header">
-            <span>终端</span>
+            <div class="editor-mode-switch terminal-mode-switch">
+              <button
+                type="button"
+                class="editor-mode-btn active"
+                id="terminal-mode-shell"
+              >
+                终端
+              </button>
+              <button
+                type="button"
+                class="editor-mode-btn"
+                id="terminal-mode-claude"
+              >
+                对话
+              </button>
+            </div>
             <span class="terminal-meta">
               <span id="shell-label">—</span>
               <span class="status-dot" id="terminal-status"></span>

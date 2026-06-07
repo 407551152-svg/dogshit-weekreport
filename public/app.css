@@ -801,6 +801,12 @@ body.is-resizing * {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+}
+
+.terminal-mode-switch .editor-mode-btn {
+  padding: 3px 10px;
+  font-size: 11px;
 }
 
 .terminal-meta {

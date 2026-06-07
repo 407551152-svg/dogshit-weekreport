@@ -26,57 +26,155 @@ export interface WorkspaceServerHandle {
 }
 
 interface TerminalClientMessage {
-  type: 'input' | 'resize'
+  type: 'input' | 'resize' | 'switch'
   data?: string
   cols?: number
   rows?: number
+  profile?: TerminalProfile
+}
+
+type TerminalProfile = 'shell' | 'claude'
+
+const TERMINAL_BUFFER_LIMIT = 512 * 1024
+
+interface TerminalSession {
+  pty: IPty | null
+  buffer: string
+  exitCode: number | null
 }
 
 function resolvePublicDir(): string {
   return join(__dirname, '..', 'public')
 }
 
+function profileLabel(profile: TerminalProfile, shell: ReturnType<typeof getDefaultShell>): string {
+  return profile === 'claude' ? 'Claude' : shell.label
+}
+
+function appendSessionBuffer(session: TerminalSession, data: string): void {
+  session.buffer += data
+  if (session.buffer.length > TERMINAL_BUFFER_LIMIT) {
+    session.buffer = session.buffer.slice(-TERMINAL_BUFFER_LIMIT)
+  }
+}
+
 function attachTerminal(
   ws: WebSocket,
   cwd: string,
   shell: ReturnType<typeof getDefaultShell>,
+  initialProfile: TerminalProfile = 'shell',
 ): () => void {
-  let ptyProcess: IPty | null = null
+  let cols = 80
+  let rows = 24
+  let activeProfile: TerminalProfile = initialProfile
 
-  const dispose = () => {
-    if (ptyProcess) {
-      ptyProcess.kill()
-      ptyProcess = null
+  const sessions: Record<TerminalProfile, TerminalSession> = {
+    shell: { pty: null, buffer: '', exitCode: null },
+    claude: { pty: null, buffer: '', exitCode: null },
+  }
+
+  const disposeAll = () => {
+    for (const profile of ['shell', 'claude'] as const) {
+      if (sessions[profile].pty) {
+        sessions[profile].pty.kill()
+        sessions[profile].pty = null
+      }
     }
   }
 
-  ptyProcess = pty.spawn(shell.command, shell.args, {
-    name: 'xterm-256color',
-    cols: 80,
-    rows: 24,
-    cwd,
-    env: buildShellEnv(cwd) as Record<string, string>,
-  })
+  const sendSwitch = (profile: TerminalProfile) => {
+    const session = sessions[profile]
+    ws.send(
+      JSON.stringify({
+        type: 'switch',
+        profile,
+        label: profileLabel(profile, shell),
+        data: session.buffer,
+        exitCode: session.exitCode,
+      }),
+    )
+  }
 
-  ptyProcess.onData((data) => {
-    if (ws.readyState === ws.OPEN) {
-      ws.send(JSON.stringify({ type: 'output', data }))
-    }
-  })
-
-  ptyProcess.onExit(({ exitCode }) => {
-    if (ws.readyState === ws.OPEN) {
-      ws.send(JSON.stringify({ type: 'exit', exitCode }))
-      ws.close()
-    }
-    ptyProcess = null
-  })
-
-  ws.on('message', (raw) => {
-    if (!ptyProcess) {
+  const spawnSession = (profile: TerminalProfile) => {
+    const session = sessions[profile]
+    if (session.pty) {
       return
     }
 
+    session.exitCode = null
+
+    const spawnOptions = {
+      name: 'xterm-256color',
+      cols,
+      rows,
+      cwd,
+      env: buildShellEnv(cwd) as Record<string, string>,
+    }
+
+    const ptyProcess =
+      profile === 'claude'
+        ? pty.spawn('claude', [], spawnOptions)
+        : pty.spawn(shell.command, shell.args, spawnOptions)
+
+    session.pty = ptyProcess
+
+    ptyProcess.onData((data) => {
+      appendSessionBuffer(session, data)
+      if (activeProfile === profile && ws.readyState === ws.OPEN) {
+        ws.send(JSON.stringify({ type: 'output', data, profile }))
+      }
+    })
+
+    ptyProcess.onExit(({ exitCode }) => {
+      session.pty = null
+      session.exitCode = exitCode
+      const notice = `\r\n\x1b[90m[${profileLabel(profile, shell)} 已退出，退出码 ${exitCode}]\x1b[0m`
+      appendSessionBuffer(session, notice)
+      if (activeProfile === profile && ws.readyState === ws.OPEN) {
+        ws.send(JSON.stringify({ type: 'exit', exitCode, profile }))
+      }
+    })
+  }
+
+  const ensureSession = (profile: TerminalProfile) => {
+    if (!sessions[profile].pty && sessions[profile].exitCode === null) {
+      spawnSession(profile)
+    }
+  }
+
+  const activateProfile = (profile: TerminalProfile) => {
+    ensureSession(profile)
+    activeProfile = profile
+    sendSwitch(profile)
+  }
+
+  const resizeSessions = (nextCols: number, nextRows: number) => {
+    cols = nextCols
+    rows = nextRows
+    for (const profile of ['shell', 'claude'] as const) {
+      sessions[profile].pty?.resize(nextCols, nextRows)
+    }
+  }
+
+  spawnSession('shell')
+  if (initialProfile === 'claude') {
+    spawnSession('claude')
+    activeProfile = 'claude'
+  }
+
+  ws.send(
+    JSON.stringify({
+      type: 'ready',
+      cwd,
+      shell: profileLabel(activeProfile, shell),
+      platform: process.platform,
+      profile: activeProfile,
+      data: sessions[activeProfile].buffer,
+      exitCode: sessions[activeProfile].exitCode,
+    }),
+  )
+
+  ws.on('message', (raw) => {
     let message: TerminalClientMessage
     try {
       message = JSON.parse(String(raw)) as TerminalClientMessage
@@ -84,8 +182,14 @@ function attachTerminal(
       return
     }
 
-    if (message.type === 'input' && typeof message.data === 'string') {
-      ptyProcess.write(message.data)
+    if (message.type === 'switch') {
+      const profile = message.profile === 'claude' ? 'claude' : 'shell'
+      const nextCols =
+        typeof message.cols === 'number' && message.cols > 0 ? message.cols : cols
+      const nextRows =
+        typeof message.rows === 'number' && message.rows > 0 ? message.rows : rows
+      resizeSessions(nextCols, nextRows)
+      activateProfile(profile)
       return
     }
 
@@ -96,23 +200,22 @@ function attachTerminal(
       && message.cols > 0
       && message.rows > 0
     ) {
-      ptyProcess.resize(message.cols, message.rows)
+      resizeSessions(message.cols, message.rows)
+      return
+    }
+
+    if (message.type === 'input' && typeof message.data === 'string') {
+      const session = sessions[activeProfile]
+      if (session.pty) {
+        session.pty.write(message.data)
+      }
     }
   })
 
-  ws.on('close', dispose)
-  ws.on('error', dispose)
+  ws.on('close', disposeAll)
+  ws.on('error', disposeAll)
 
-  ws.send(
-    JSON.stringify({
-      type: 'ready',
-      cwd,
-      shell: shell.label,
-      platform: process.platform,
-    }),
-  )
-
-  return dispose
+  return disposeAll
 }
 
 function sendFileError(res: express.Response, error: unknown): void {
@@ -259,8 +362,11 @@ export async function startWorkspaceServer(options: WorkspaceServerOptions): Pro
     cleanups.add(fileWatchCleanup)
   }
 
-  wss.on('connection', (ws) => {
-    const cleanup = attachTerminal(ws, cwd, shell)
+  wss.on('connection', (ws, request) => {
+    const host = request.headers.host ?? '127.0.0.1'
+    const profileParam = new URL(request.url ?? '/', `http://${host}`).searchParams.get('profile')
+    const initialProfile = profileParam === 'claude' ? 'claude' : 'shell'
+    const cleanup = attachTerminal(ws, cwd, shell, initialProfile)
     cleanups.add(cleanup)
     ws.on('close', () => {
       cleanups.delete(cleanup)
