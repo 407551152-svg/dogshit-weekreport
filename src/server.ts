@@ -212,9 +212,6 @@ function attachTerminal(
     }
   })
 
-  ws.on('close', disposeAll)
-  ws.on('error', disposeAll)
-
   return disposeAll
 }
 
@@ -368,9 +365,16 @@ export async function startWorkspaceServer(options: WorkspaceServerOptions): Pro
     const initialProfile = profileParam === 'claude' ? 'claude' : 'shell'
     const cleanup = attachTerminal(ws, cwd, shell, initialProfile)
     cleanups.add(cleanup)
-    ws.on('close', () => {
+
+    const onClose = () => {
+      cleanup()
       cleanups.delete(cleanup)
-    })
+      ws.off('close', onClose)
+      ws.off('error', onClose)
+    }
+
+    ws.on('close', onClose)
+    ws.on('error', onClose)
   })
 
   treeWss.on('connection', (ws) => {
@@ -388,7 +392,7 @@ export async function startWorkspaceServer(options: WorkspaceServerOptions): Pro
 
   const port = await new Promise<number>((resolve, reject) => {
     server.once('error', reject)
-    server.listen(options.port ?? 0, host, () => {
+    server.listen(options.port ?? 4721, host, () => {
       const address = server.address()
       if (!address || typeof address === 'string') {
         reject(new Error('Failed to resolve server port'))
@@ -400,6 +404,8 @@ export async function startWorkspaceServer(options: WorkspaceServerOptions): Pro
 
   const url = `http://${host}:${port}`
 
+  let isClosing = false
+
   return {
     url,
     port,
@@ -407,9 +413,17 @@ export async function startWorkspaceServer(options: WorkspaceServerOptions): Pro
     shell,
     close: () =>
       new Promise((resolve, reject) => {
+        if (isClosing) {
+          resolve()
+          return
+        }
+        isClosing = true
+
         for (const cleanup of cleanups) {
           cleanup()
         }
+        cleanups.clear()
+
         wss.close((wssError) => {
           if (wssError) {
             reject(wssError)

@@ -1,12 +1,27 @@
 #!/usr/bin/env node
 
+import { spawn } from 'node:child_process'
 import { resolve } from 'node:path'
 import { startWorkspaceServer } from './server.js'
 
-function parseArgs(argv: string[]): { cwd: string; port?: number } {
+const DEFAULT_PORT = 4721
+
+function openInBrowser(url: string): void {
+  const launcher =
+    process.platform === 'win32'
+      ? { command: 'cmd', args: ['/c', 'start', '', url] as string[] }
+      : process.platform === 'darwin'
+        ? { command: 'open', args: [url] }
+        : { command: 'xdg-open', args: [url] }
+
+  spawn(launcher.command, launcher.args, { detached: true, stdio: 'ignore' }).unref()
+}
+
+function parseArgs(argv: string[]): { cwd: string; port: number; openBrowser: boolean } {
   const args = [...argv]
   let cwd = process.cwd()
-  let port: number | undefined
+  let port = DEFAULT_PORT
+  let openBrowser = true
 
   while (args.length > 0) {
     const arg = args.shift()
@@ -27,30 +42,36 @@ function parseArgs(argv: string[]): { cwd: string; port?: number } {
       continue
     }
 
+    if (arg === '--no-open') {
+      openBrowser = false
+      continue
+    }
+
     if (arg === '--help' || arg === '-h') {
       printHelp()
       process.exit(0)
     }
   }
 
-  return { cwd, port }
+  return { cwd, port, openBrowser }
 }
 
 function printHelp(): void {
   console.log(`weekreport-term — 浏览器内项目工作台
 
 用法:
-  weekreport-term [--cwd <path>] [--port <number>]
+  weekreport-term [--cwd <path>] [--port <number>] [--no-open]
 
 选项:
-  --cwd   项目根目录，默认为当前目录
-  --port  监听端口，默认自动分配
-  -h      显示帮助
+  --cwd      项目根目录，默认为当前目录
+  --port     监听端口，默认 ${DEFAULT_PORT}
+  --no-open  启动后不自动打开浏览器
+  -h         显示帮助
 `)
 }
 
 async function main(): Promise<void> {
-  const { cwd, port } = parseArgs(process.argv.slice(2))
+  const { cwd, port, openBrowser } = parseArgs(process.argv.slice(2))
   const handle = await startWorkspaceServer({ cwd, port })
 
   console.log('')
@@ -61,13 +82,22 @@ async function main(): Promise<void> {
   console.log('  按 Ctrl+C 停止服务')
   console.log('')
 
+  if (openBrowser) {
+    openInBrowser(handle.url)
+  }
+
+  let shuttingDown = false
   const shutdown = async () => {
+    if (shuttingDown) {
+      return
+    }
+    shuttingDown = true
     await handle.close()
     process.exit(0)
   }
 
-  process.on('SIGINT', shutdown)
-  process.on('SIGTERM', shutdown)
+  process.once('SIGINT', shutdown)
+  process.once('SIGTERM', shutdown)
 }
 
 main().catch((error: unknown) => {
