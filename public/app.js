@@ -246,6 +246,7 @@ const THEMES = ['dark', 'light', 'one-dark']
 const DEFAULT_THEME = 'one-dark'
 const THEME_STORAGE_KEY = 'dwr-theme'
 const LAST_FILE_STORAGE_KEY = 'dwr-last-file'
+const DEFAULT_OPEN_FILE = 'work/README.md'
 const DEFAULT_TREE_PATH = 'work'
 const FOCUS_ROOT_NAMES = new Set(['work', 'CLAUDE.md', '.claude'])
 let currentThemeIndex = THEMES.indexOf(DEFAULT_THEME)
@@ -1343,10 +1344,7 @@ async function restoreLastOpenedFile() {
     return
   }
 
-  const path = localStorage.getItem(LAST_FILE_STORAGE_KEY)
-  if (!path) {
-    return
-  }
+  const path = localStorage.getItem(LAST_FILE_STORAGE_KEY) ?? DEFAULT_OPEN_FILE
 
   if (!isPathInFocusTree(path)) {
     await showFullProjectTree()
