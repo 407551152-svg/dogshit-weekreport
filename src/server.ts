@@ -8,7 +8,7 @@ import * as pty from 'node-pty'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { FileAccessError, createProjectDirectory, createProjectFile, deleteProjectEntry, listDirectory, readProjectFile, writeProjectFile } from './files.js'
 import { watchProjectDirectory } from './fileWatch.js'
-import { buildShellEnv, getDefaultShell } from './shell.js'
+import { buildShellEnv, getDefaultShell, resolveClaudeSpawn } from './shell.js'
 import { buildClaudeShellEnv, isClientIpAllowed, normalizeClientIp } from './env.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -98,6 +98,19 @@ function attachTerminal(
     )
   }
 
+  const failSessionSpawn = (profile: TerminalProfile, reason: string) => {
+    const session = sessions[profile]
+    session.exitCode = 1
+    const notice =
+      profile === 'claude' && reason.toLowerCase().includes('file not found')
+        ? `\r\n\x1b[31m[Claude 启动失败：未找到 claude 命令。请在终端执行 start.bat 自动安装，或手动安装 Claude Code CLI]\x1b[0m`
+        : `\r\n\x1b[31m[${profileLabel(profile, shell)} 启动失败：${reason}]\x1b[0m`
+    appendSessionBuffer(session, notice)
+    if (activeProfile === profile && ws.readyState === ws.OPEN) {
+      ws.send(JSON.stringify({ type: 'exit', exitCode: 1, profile }))
+    }
+  }
+
   const spawnSession = (profile: TerminalProfile) => {
     const session = sessions[profile]
     if (session.pty) {
@@ -117,10 +130,19 @@ function attachTerminal(
           : (buildShellEnv(cwd) as Record<string, string>),
     }
 
-    const ptyProcess =
+    const spawnTarget =
       profile === 'claude'
-        ? pty.spawn('claude', [], spawnOptions)
-        : pty.spawn(shell.command, shell.args, spawnOptions)
+        ? resolveClaudeSpawn(shell)
+        : { command: shell.command, args: shell.args }
+
+    let ptyProcess: IPty
+    try {
+      ptyProcess = pty.spawn(spawnTarget.command, spawnTarget.args, spawnOptions)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : '未知错误'
+      failSessionSpawn(profile, reason)
+      return
+    }
 
     session.pty = ptyProcess
 
