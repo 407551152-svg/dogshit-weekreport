@@ -43,6 +43,38 @@ const FILE_ICON_DEFS = {
     color: '#8b949e',
     path: 'M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6 9H6v-2h8v2zm4 0h-2v-2h2v2z',
   },
+  docx: {
+    color: '#2b579a',
+    path: 'M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z',
+  },
+  pptx: {
+    color: '#d24726',
+    path: 'M10 8v8l5-4-5-4zm9-5H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z',
+  },
+  xlsx: {
+    color: '#217346',
+    path: 'M3 3v18h18V3H3zm8 16H5v-4h6v4zm0-6H5V9h6v4zm6 6h-6v-4h6v4zm0-6h-6V9h6v4z',
+  },
+  txt: {
+    color: '#78909c',
+    path: 'M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm0-4H8V8h8v2z',
+  },
+  jpg: {
+    color: '#fb8c00',
+    path: 'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2 .9 2 2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z',
+  },
+  png: {
+    color: '#8e24aa',
+    path: 'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2 .9 2 2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z',
+  },
+  mp4: {
+    color: '#e53935',
+    path: 'M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z',
+  },
+  mov: {
+    color: '#00897b',
+    path: 'M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z',
+  },
 }
 
 const FILE_ICON_RULES = [
@@ -50,6 +82,14 @@ const FILE_ICON_RULES = [
   { match: (name) => /^\.git/i.test(name) && name !== '.gitignore', icon: 'git' },
   { match: (name) => /\.mdx?$/i.test(name), icon: 'markdown' },
   { match: (name) => /\.markdown$/i.test(name), icon: 'markdown' },
+  { match: (name) => /\.docx?$/i.test(name), icon: 'docx' },
+  { match: (name) => /\.pptx?$/i.test(name), icon: 'pptx' },
+  { match: (name) => /\.xlsx?$/i.test(name), icon: 'xlsx' },
+  { match: (name) => /\.txt$/i.test(name), icon: 'txt' },
+  { match: (name) => /\.jpe?g$/i.test(name), icon: 'jpg' },
+  { match: (name) => /\.png$/i.test(name), icon: 'png' },
+  { match: (name) => /\.mp4$/i.test(name), icon: 'mp4' },
+  { match: (name) => /\.mov$/i.test(name), icon: 'mov' },
   { match: (name) => /\.tsx?$/i.test(name), icon: 'ts' },
   { match: (name) => /\.json$/i.test(name), icon: 'json' },
   { match: (name) => /\.css$/i.test(name), icon: 'css' },
