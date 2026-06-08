@@ -288,11 +288,27 @@ function applyTheme(themeName, options = { persist: true }) {
   }
 }
 
+function resolveSystemTheme() {
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'one-dark'
+}
+
 function loadStoredTheme() {
   const saved = localStorage.getItem(THEME_STORAGE_KEY)
-  const themeName = saved && THEMES.includes(saved) ? saved : DEFAULT_THEME
+  const themeName = saved && THEMES.includes(saved) ? saved : resolveSystemTheme()
   currentThemeIndex = THEMES.indexOf(themeName)
   applyTheme(themeName, { persist: false })
+}
+
+function initSystemThemeWatcher() {
+  const media = window.matchMedia('(prefers-color-scheme: dark)')
+  media.addEventListener('change', () => {
+    if (localStorage.getItem(THEME_STORAGE_KEY)) {
+      return
+    }
+    const themeName = resolveSystemTheme()
+    currentThemeIndex = THEMES.indexOf(themeName)
+    applyTheme(themeName, { persist: false })
+  })
 }
 
 function toggleTheme() {
@@ -1539,6 +1555,7 @@ function connectTerminal() {
 
 async function init() {
   loadStoredTheme()
+  initSystemThemeWatcher()
   initMobileLayout()
   updateTerminalModeUI()
   initTerminal()
@@ -1619,7 +1636,7 @@ async function init() {
       return
     }
 
-    if (key === 's') {
+    if (key === 'x') {
       event.preventDefault()
       toggleTerminalMode()
       return
