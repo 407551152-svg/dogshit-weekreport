@@ -123,7 +123,3 @@ npm start -- --cwd /path/to/project --port 4721
 ├── start.bat        # Windows 一键启动
 └── .env.example     # 环境变量示例
 ```
-
-## License
-
-MIT
